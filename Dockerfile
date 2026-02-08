@@ -1,3 +1,16 @@
+FROM node:20-alpine AS assets
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY resources ./resources
+COPY public ./public
+COPY vite.config.js postcss.config.js tailwind.config.js ./
+
+RUN npm run build
+
 FROM php:8.2-cli
 
 WORKDIR /var/www/html
@@ -25,6 +38,9 @@ RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoload
 
 # 3) copy the full app (now artisan exists)
 COPY . .
+
+# 3.1) copy Vite build output
+COPY --from=assets /app/public/build /var/www/html/public/build
 
 # 4) run scripts after artisan exists
 RUN php artisan package:discover --ansi
