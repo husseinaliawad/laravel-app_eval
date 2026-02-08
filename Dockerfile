@@ -1,21 +1,16 @@
 # ---------- Stage 1: Build frontend (Vite) ----------
 FROM node:20-alpine AS frontend
-
 WORKDIR /app
 
 COPY package.json package-lock.json* pnpm-lock.yaml* yarn.lock* ./
-
-# استخدم npm افتراضياً (لو عندك yarn/pnpm خبرني)
 RUN npm install
 
 COPY . .
-
 RUN npm run build
 
 
 # ---------- Stage 2: PHP + Composer ----------
 FROM php:8.2-cli
-
 WORKDIR /var/www/html
 
 RUN apt-get update \
@@ -25,6 +20,8 @@ RUN apt-get update \
         libzip-dev \
         libonig-dev \
         libxml2-dev \
+        libsqlite3-dev \
+        sqlite3 \
     && docker-php-ext-install \
         bcmath \
         mbstring \
@@ -37,14 +34,12 @@ RUN apt-get update \
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-# انسخ ملفات PHP أولاً ثم composer install
 COPY composer.json composer.lock ./
 RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-progress
 
-# انسخ باقي المشروع
 COPY . .
 
-# انسخ build الناتج من Vite
+# Vite build output
 COPY --from=frontend /app/public/build /var/www/html/public/build
 
 ENV APP_ENV=production \
@@ -58,7 +53,6 @@ RUN php artisan config:cache || true \
     && chmod -R 775 storage bootstrap/cache
 
 EXPOSE 10000
-
 USER www-data
 
 CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=10000"]
