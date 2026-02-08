@@ -1,18 +1,23 @@
+# =========================
+# 1) Build frontend assets
+# =========================
 FROM node:20-alpine AS assets
-
 WORKDIR /app
 
 COPY package.json package-lock.json ./
 RUN npm ci
 
-COPY resources ./resources
-COPY public ./public
-COPY vite.config.js postcss.config.js tailwind.config.js ./
+# لازم ننسخ المشروع كامل هون لتتأكد كل الملفات موجودة للـ build
+COPY . .
 
 RUN npm run build
+RUN ls -la public/build || true
 
+
+# =========================
+# 2) PHP runtime
+# =========================
 FROM php:8.2-cli
-
 WORKDIR /var/www/html
 
 RUN apt-get update \
@@ -28,22 +33,24 @@ RUN apt-get update \
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 ENV APP_ENV=production \
-    APP_DEBUG=false
+    APP_DEBUG=false \
+    LOG_CHANNEL=stderr
 
-# 1) copy composer files
+# composer أولًا للاستفادة من caching
 COPY composer.json composer.lock ./
-
-# 2) install vendors WITHOUT scripts (artisan not available yet)
 RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-progress --no-scripts
 
-# 3) copy the full app (now artisan exists)
+# بعدين ننسخ المشروع
 COPY . .
 
-# 3.1) copy Vite build output
+# ننسخ build من مرحلة node
 COPY --from=assets /app/public/build /var/www/html/public/build
 
-# 4) run scripts after artisan exists
-RUN php artisan package:discover --ansi
+# الآن artisan موجود
+RUN php artisan package:discover --ansi \
+  && php artisan config:cache \
+  && php artisan route:cache \
+  && php artisan view:cache || true
 
 RUN mkdir -p storage bootstrap/cache \
   && chown -R www-data:www-data storage bootstrap/cache \
